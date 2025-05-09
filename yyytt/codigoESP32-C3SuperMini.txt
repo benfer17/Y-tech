@@ -1,0 +1,241 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>  
+
+// Configuración WiFi
+const char* ssid = "Ecargana la saldo";
+const char* password = "17110ben";
+
+// Configuración Telegram
+const String BOT_TOKEN = "7609146090:AAHf4fY_oIUzfe0eIy7VL68iqPghSmaf2Oc";
+const String CHAT_ID = "1521644837";  // Con @ si es un username de canal/grupo
+
+// Pines del hardware - Adaptados para ESP32-C3 Super Mini
+const int trigPin = 2;
+const int echoPin = 3;
+const int ledVerde = 4;
+const int ledAmarillo = 5;
+const int ledRojo = 7;
+
+// Variables de control
+const float alturaMinima = 2.0;  // 2cm = 100% (tanque lleno)
+const float alturaMaxima = 10.0; // 10cm = 0% (tanque vacío)
+bool alertaEnviada = false;      // Para evitar enviar múltiples alertas
+
+// CONFIGURACIÓN DEL SERVIDOR FLASK (PC LOCAL)
+const char* servidorFlask = "http://192.168.20.65:5000/data"; // IP de tu PC con Flask
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000); // Esperar a que se inicialice la comunicación serial
+  
+  Serial.println("\n\n=== Sistema de Monitorización de Nivel de Agua ===");
+  
+  // Configurar pines
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(ledVerde, OUTPUT);
+  pinMode(ledAmarillo, OUTPUT);
+  pinMode(ledRojo, OUTPUT);
+  
+  // Test inicial de LEDs
+  testLEDs();
+  
+  // Conectar WiFi
+  conectarWiFi();
+  
+  Serial.println("Sistema iniciado y listo.");
+}
+
+void loop() {
+  // Medir la distancia
+  float distancia = medirDistancia();
+  
+  // Calcular el nivel de agua
+  float nivel = calcularNivel(distancia);
+
+  // Mostrar datos en el monitor serial
+  mostrarDatos(distancia, nivel);
+  
+  // Controlar los LEDs de acuerdo al nivel
+  controlarLEDs(nivel);
+  
+  // Enviar alertas a Telegram si es necesario
+  manejarAlertas(nivel);
+
+  // Enviar los datos al servidor Flask cada 20 segundos
+  static unsigned long ultimoEnvio = 0;
+  if (millis() - ultimoEnvio >= 20000) {
+    enviarDatosAServidor(distancia, nivel);
+    ultimoEnvio = millis();
+  }
+
+  // Pequeña pausa entre mediciones
+  delay(1000);
+}
+
+// Función mejorada para conectar WiFi
+void conectarWiFi() {
+  Serial.println("Conectando a WiFi...");
+  WiFi.begin(ssid, password);
+ 
+  int intentos = 0;
+  const int maxIntentos = 40;
+  
+  while (WiFi.status() != WL_CONNECTED && intentos < maxIntentos) {
+    delay(500);
+    Serial.print(".");
+    intentos++;
+  }
+ 
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nConectado! IP: " + WiFi.localIP().toString());
+  } else {
+    Serial.println("\nError en conexión WiFi. Operando sin conexión.");
+  }
+}
+
+// Función corregida para enviar mensajes a Telegram
+void enviarTelegram(String mensaje) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("No hay conexión WiFi para enviar alerta");
+    return;
+  }
+  
+  WiFiClientSecure clienteSeguro;
+  clienteSeguro.setInsecure();  // Desactiva verificación de certificados
+
+  HTTPClient http;
+  String url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage";
+  
+  // Codificación básica de URL para caracteres especiales
+  mensaje.replace(" ", "%20");
+  mensaje.replace(":", "%3A");
+  mensaje.replace("(", "%28");
+  mensaje.replace(")", "%29");
+  mensaje.replace("%", "%25");
+  
+  // Corrección del formato del payload
+  String payload = "chat_id=" + CHAT_ID + "&text=" + mensaje;
+ 
+  http.begin(clienteSeguro, url);
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  int httpCode = http.POST(payload);
+ 
+  if (httpCode > 0) {
+    String respuesta = http.getString();
+    Serial.println("Respuesta de Telegram: " + respuesta);
+    Serial.println("Alerta enviada a Telegram");
+  } else {
+    Serial.println("Error enviando a Telegram: " + String(httpCode));
+    Serial.println("Error específico: " + http.errorToString(httpCode));
+  }
+  http.end();
+}
+
+void testLEDs() {
+  Serial.println("Probando LEDs...");
+  
+  digitalWrite(ledVerde, HIGH);
+  delay(300);
+  digitalWrite(ledVerde, LOW);
+  
+  digitalWrite(ledAmarillo, HIGH);
+  delay(300);
+  digitalWrite(ledAmarillo, LOW);
+  
+  digitalWrite(ledRojo, HIGH);
+  delay(300);
+  digitalWrite(ledRojo, LOW);
+  
+  Serial.println("Prueba de LEDs completada");
+}
+
+float medirDistancia() {
+  // Generar pulso ultrasónico
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+ 
+  // Medir el tiempo que tarda en regresar el eco
+  long duracion = pulseIn(echoPin, HIGH, 30000);
+  
+  if (duracion == 0) {
+    Serial.println("¡ADVERTENCIA: No se detectó eco!");
+    return alturaMaxima; // Valor máximo si hay error
+  }
+ 
+  // Calcular la distancia en centímetros
+  float distancia = duracion * 0.0343 / 2.0;
+  
+  return distancia;
+}
+
+float calcularNivel(float distancia) {
+  float nivel = 100.0 * (1.0 - (distancia - alturaMinima) / (alturaMaxima - alturaMinima));
+  return constrain(nivel, 0, 100);
+}
+
+void mostrarDatos(float distancia, float nivel) {
+  Serial.print("Distancia: ");
+  Serial.print(distancia, 1);
+  Serial.print(" cm | Nivel: ");
+  Serial.print(nivel, 1);
+  Serial.println(" %");
+}
+
+void controlarLEDs(float nivel) {
+  // Apagar todos los LEDs primero
+  digitalWrite(ledVerde, LOW);
+  digitalWrite(ledAmarillo, LOW);
+  digitalWrite(ledRojo, LOW);
+ 
+  // Encender el LED correspondiente según el nivel
+  if (nivel >= 75) {
+    digitalWrite(ledVerde, HIGH);
+  } else if (nivel >= 30) {
+    digitalWrite(ledAmarillo, HIGH);
+  } else {
+    digitalWrite(ledRojo, HIGH);
+  }
+}
+
+void manejarAlertas(float nivel) {
+  if (nivel < 30 && !alertaEnviada) {
+    String mensaje = "🚨 ALERTA: Nivel de agua bajo (" + String(nivel, 1) + "%)";
+    Serial.println("Enviando alerta a Telegram...");
+    enviarTelegram(mensaje);
+    alertaEnviada = true;
+    Serial.println("Alerta enviada.");
+  } else if (nivel >= 30) {
+    alertaEnviada = false; // Resetear alerta si el nivel sube
+  }
+}
+
+// NUEVA FUNCIÓN para enviar distancia y nivel al servidor web Flask
+void enviarDatosAServidor(float distancia, float nivel) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(servidorFlask);
+    http.addHeader("Content-Type", "application/json");
+
+    String json = "{\"distancia\":" + String(distancia, 1) + ",\"nivel\":" + String(nivel, 1) + "}";
+    Serial.println("Enviando datos a Flask: " + json);
+    
+    int codigo = http.POST(json);
+    
+    if (codigo > 0) {
+      String respuesta = http.getString();
+      Serial.println("Respuesta del servidor: " + respuesta);
+      Serial.println("Código respuesta: " + String(codigo));
+    } else {
+      Serial.println("Error al enviar datos al servidor: " + http.errorToString(codigo));
+    }
+
+    http.end();
+  } else {
+    Serial.println("No conectado al WiFi para enviar a servidor Flask.");
+  }
+}

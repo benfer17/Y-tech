@@ -1,0 +1,4 @@
+INSERT INTO alarmas (nombre, descripcion, fecha_creacion, fecha_alta) VALUES ('Temperatura', 'Temperatura demasiado alta', datetime('now'), datetime('now'));
+INSERT INTO alarmas (nombre, descripcion, fecha_creacion, fecha_alta) VALUES ('Temperatura', 'Temperatura demasiado baja', datetime('now'), datetime('now'));
+INSERT INTO alarmas (nombre, descripcion, fecha_creacion, fecha_alta) VALUES ('Humedad', 'Humedad demasiado alta', datetime('now'), datetime('now'));
+INSERT INTO alarmas (nombre, descripcion, fecha_creacion, fecha_alta) VALUES ('Humedad', 'Humedad demasiado baja', datetime('now'), datetime('now'));

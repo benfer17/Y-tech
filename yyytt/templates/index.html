@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Sistema de Alertas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body style="background-image: url('{{ url_for('static', filename='fondo4.png') }}'); background-size: cover; background-position: center;">
+
+    <!-- Capa oscura encima del fondo -->
+    <div class="bg-black bg-opacity-60 min-h-screen text-white text-lg">
+
+        <header class="p-4 shadow-md">
+            <h1 class="text-3xl font-bold text-center">Sistema de Monitoreo de Niveles de Agua</h1>
+            <img src="{{ url_for('static', filename='ytech.PNG') }}" alt="Logo" 
+                class="mx-auto mt-2" style="width: 450px; height: 450px;">
+        </header>
+
+        <main class="p-6 space-y-8">
+            <section>
+                <h2 class="text-2xl font-semibold mb-4 text-center">Alertas activas</h2>
+                <div id="alertas-container" class="space-y-4 text-center text-xl">
+                    <!-- Las alertas se cargarán aquí -->
+                </div>
+            </section>
+
+            <section>
+                <h2 class="text-2xl font-semibold mb-4 text-center">Distancia detectada</h2>
+                <div id="valor-distancia" class="text-center text-2xl font-bold">
+                    <!-- La distancia se cargará aquí -->
+                </div>
+            </section>
+
+            <section class="text-center">
+                <h2 class="text-2xl font-semibold mb-4">Últimas mediciones</h2>
+                <div class="overflow-x-auto inline-block min-w-full">
+                    <table class="min-w-full bg-gray-800 bg-opacity-70 text-white rounded shadow text-lg">
+                        <thead class="bg-gray-700 text-xl">
+                            <tr>
+                                <th class="py-3 px-6 border border-gray-600">Sensor</th>
+                                <th class="py-3 px-6 border border-gray-600">Valor</th>
+                                <th class="py-3 px-6 border border-gray-600">Fecha y hora</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-mediciones">
+                            <!-- Aquí irán los datos cargados con JavaScript o Flask -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        fetch('/api/mediciones')
+            .then(res => res.json())
+            .then(data => {
+                const tbody = document.getElementById('tabla-mediciones');
+                tbody.innerHTML = data.map(row => `
+                    <tr>
+                        <td class="border px-6 py-3">${row[0]}</td>
+                        <td class="border px-6 py-3">${row[1]}</td>
+                        <td class="border px-6 py-3">${row[2]}</td>
+                    </tr>
+                `).join('');
+            });
+
+        fetch('/api/distancia')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('valor-distancia').textContent = data.distancia + ' cm';
+            });
+
+        fetch('/api/alertas')
+            .then(res => res.json())
+            .then(data => {
+                const container = document.getElementById('alertas-container');
+                if (data.length === 0) {
+                    container.innerHTML = `
+                        <div class="bg-white bg-opacity-10 text-white p-6 rounded shadow-md">
+                            <p class="text-xl">No hay alertas activas por ahora.</p>
+                        </div>
+                    `;
+                } else {
+                    container.innerHTML = data.map(alerta => `
+                        <div class="bg-red-600 bg-opacity-30 text-white p-6 rounded shadow-md">
+                            <p class="text-xl"><strong>${alerta[0]}</strong> detectó valor crítico de <strong>${alerta[1]} cm</strong> a las ${alerta[2]}</p>
+                        </div>
+                    `).join('');
+                }
+            });
+    </script>
+</body>
+</html>
